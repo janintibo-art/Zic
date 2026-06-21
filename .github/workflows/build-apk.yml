@@ -1,0 +1,73 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Afficher où sont les fichiers du projet
+        run: |
+          echo "settings.gradle trouvés :"; find . -name settings.gradle
+          echo "build.gradle trouvés :";    find . -name build.gradle
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer le SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Installer Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Trouver le projet et compiler l'APK
+        run: |
+          set -e
+          SETTINGS=$(find . -name settings.gradle | head -1)
+          if [ -z "$SETTINGS" ]; then
+            echo "ERREUR : aucun settings.gradle dans le depot. Le projet n'a pas ete envoye."
+            exit 1
+          fi
+          DIR=$(dirname "$SETTINGS")
+          echo ">> Projet trouve dans : $DIR"
+          cd "$DIR"
+          gradle wrapper --gradle-version 8.7
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Localiser et renommer l'APK
+        run: |
+          APK=$(find . -path '*/apk/debug/*.apk' | head -1)
+          echo ">> APK : $APK"
+          cp "$APK" ZicZic.apk
+
+      - name: Mettre l'APK en téléchargement (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZicZic-apk
+          path: ZicZic.apk
+          if-no-files-found: error
+
+      - name: Publier dans la Release "latest"
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: ZicZic — dernière version
+          body: APK compilé automatiquement. Téléchargez ZicZic.apk ci-dessous.
+          files: ZicZic.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
